@@ -9,7 +9,5 @@
     "declaration": true,
     "pretty": true
   },
-  "include": [
-    "index.ts"
-  ]
+  "include": ["index.ts"]
 }

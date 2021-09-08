@@ -21,33 +21,81 @@ export type JsonValue =
   | JsonArray;
 
 /**
- * @typedef {Object} Struct
- * @property {Object.<string, Value>} fields The struct fields.
+ *  `Struct` represents a structured data value, consisting of fields
+ *  which map to dynamically typed values. In some languages, `Struct`
+ *  might be supported by a native representation. For example, in
+ *  scripting languages like JS a struct is represented as an
+ *  object. The details of that representation are described together
+ *  with the proto support for the language.
+ *
+ *  The JSON representation for `Struct` is JSON object.
  */
 export interface Struct {
-  fields?: { [key: string]: KindContainer };
-}
-
-interface KindContainer {
-  kind: Value;
-}
-
-interface Value {
-  $case: string;
-  nullValue?: number;
-  numberValue?: number;
-  stringValue?: string;
-  boolValue?: boolean;
-  structValue?: Struct;
-  listValue?: ListValue;
+  /**
+   *  Unordered map of dynamically typed values.
+   */
+  fields: { [key: string]: Value };
 }
 
 /**
- * @typedef {Object} ListValue
- * @property {Value[]} values The list values.
+ *  `Value` represents a dynamically typed value which can be either
+ *  null, a number, a string, a boolean, a recursive struct value, or a
+ *  list of values. A producer of value is expected to set one of that
+ *  variants, absence of any variant indicates an error.
+ *
+ *  The JSON representation for `Value` is JSON value.
+ */
+
+interface Value {
+  kind: {
+    $case: string;
+    nullValue?: number;
+    numberValue?: number;
+    stringValue?: string;
+    boolValue?: boolean;
+    structValue?: Struct;
+    listValue?: ListValue;
+  };
+}
+
+/**
+ *  `ListValue` is a wrapper around a repeated field of values.
+ *
+ *  The JSON representation for `ListValue` is JSON array.
  */
 export interface ListValue {
-  values?: Value[];
+  /**
+   *  Repeated field of dynamically typed values.
+   */
+  values: Value[];
+}
+
+export enum NullValue {
+  /** NULL_VALUE -  Null value.
+   */
+  NULL_VALUE = 0,
+  UNRECOGNIZED = -1,
+}
+
+export function nullValueFromJSON(object: any): NullValue {
+  switch (object) {
+    case 0:
+    case "NULL_VALUE":
+      return NullValue.NULL_VALUE;
+    case -1:
+    case "UNRECOGNIZED":
+    default:
+      return NullValue.UNRECOGNIZED;
+  }
+}
+
+export function nullValueToJSON(object: NullValue): string {
+  switch (object) {
+    case NullValue.NULL_VALUE:
+      return "NULL_VALUE";
+    default:
+      return "UNKNOWN";
+  }
 }
 
 /**
@@ -77,16 +125,18 @@ function typeOf(value: JsonValue): string {
   return toString.call(value);
 }
 
-function wrap(kind: Kind, value): Value {
+function wrap(theKind: Kind, value: any): Value {
   return {
-    $case: kind,
-    [kind]: value,
+    kind: {
+      $case: theKind,
+      [theKind]: value,
+    },
   };
 }
 
 function getKind(value: Value): string | null {
-  if (value.$case) {
-    return value.$case;
+  if (value.kind.$case) {
+    return value.kind.$case;
   }
 
   const validKinds = Object.values(Kind);
@@ -127,21 +177,19 @@ export const value = {
    * @returns {*}
    */
   decode(value: Value): JsonValue {
-    const kind = getKind(value);
-
-    if (!kind) {
-      throw new TypeError(`Unable to determine kind for "${value}".`);
-    }
-
-    switch (kind) {
+    switch (value.kind.$case) {
       case "listValue":
-        return list.decode(value.listValue);
+        return list.decode(value.kind.listValue);
       case "structValue":
-        return struct.decode(value.structValue);
+        return struct.decode(value.kind.structValue);
       case "nullValue":
         return null;
-      default:
-        return value[kind] as JsonValue;
+      case "numberValue":
+        return value.kind.numberValue;
+      case "stringValue":
+        return value.kind.stringValue;
+      case "boolValue":
+        return value.kind.boolValue;
     }
   },
 };
@@ -161,9 +209,7 @@ export const struct = {
     Object.keys(json).forEach((key) => {
       // If value is undefined, do not encode it.
       if (typeof json[key] === "undefined") return;
-      fields[key] = {
-        kind: value.encode(json[key]),
-      };
+      fields[key] = value.encode(json[key]);
     });
     return { fields };
   },
@@ -176,7 +222,7 @@ export const struct = {
   decode({ fields }: Struct): JsonObject {
     const json = {};
     Object.keys(fields).forEach((key) => {
-      json[key] = value.decode(fields[key].kind);
+      json[key] = value.decode(fields[key]);
     });
     return json;
   },
