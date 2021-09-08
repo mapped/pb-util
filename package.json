@@ -11,7 +11,7 @@
   "scripts": {
     "build": "tsc",
     "lint": "eslint ./{index,test}.ts",
-    "test": "npm run lint && ava ./test.ts --verbose",
+    "test": "ava ./test.ts --verbose",
     "prepublishOnly": "npm run build"
   },
   "repository": "callmehiphop/pb-util",

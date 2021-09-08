@@ -1,7 +1,7 @@
 /**
  * Matches a JSON object.
  */
-export type JsonObject = {[key: string]: JsonValue};
+export type JsonObject = { [key: string]: JsonValue };
 
 /**
  * Matches a JSON array.
@@ -12,41 +12,34 @@ export interface JsonArray extends Array<JsonValue> {}
 /**
  * Matches any valid JSON value.
  */
-export type JsonValue = string|number|boolean|null|JsonObject|JsonArray;
-
-/**
- * @typedef {Object} Value
- * @property {string} kind The kind of value. Valid values for this fields are
- *     - `nullValue`
- *     - `numberValue`
- *     - `stringValue`
- *     - `boolValue`
- *     - `structValue`
- *     - `listValue`
- * @property {number} [nullValue] Represents a null value, actual field value
- *     should be `0`.
- * @property {number} [numberValue] Represents a number.
- * @property {string} [stringValue] Represents a string.
- * @property {boolean} [boolValue] Represents a boolean.
- * @property {Struct} [structValue] Represents an object.
- * @property {ListValue} [listValue] Represents an array of values.
- */
-export interface Value {
-  kind?: string;
-  nullValue?: number;
-  numberValue?: number;
-  stringValue?: string;
-  boolValue?: boolean;
-  structValue?: Struct;
-  listValue?: ListValue;
-}
+export type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonObject
+  | JsonArray;
 
 /**
  * @typedef {Object} Struct
  * @property {Object.<string, Value>} fields The struct fields.
  */
 export interface Struct {
-  fields?: {[key: string]: Value};
+  fields?: { [key: string]: KindContainer };
+}
+
+interface KindContainer {
+  kind: Value;
+}
+
+interface Value {
+  $case: string;
+  nullValue?: number;
+  numberValue?: number;
+  stringValue?: string;
+  boolValue?: boolean;
+  structValue?: Struct;
+  listValue?: ListValue;
 }
 
 /**
@@ -61,23 +54,23 @@ export interface ListValue {
  * Valid `kind` types
  */
 enum Kind {
-  Struct = 'structValue',
-  List = 'listValue',
-  Number = 'numberValue',
-  String = 'stringValue',
-  Bool = 'boolValue',
-  Null = 'nullValue'
+  Struct = "structValue",
+  List = "listValue",
+  Number = "numberValue",
+  String = "stringValue",
+  Bool = "boolValue",
+  Null = "nullValue",
 }
 
 const toString = Object.prototype.toString;
 
 const encoders = {
-  [typeOf({})]: v => wrap(Kind.Struct, struct.encode(v)),
-  [typeOf([])]: v => wrap(Kind.List, list.encode(v)),
-  [typeOf(0)]: v => wrap(Kind.Number, v),
-  [typeOf('')]: v => wrap(Kind.String, v),
-  [typeOf(true)]: v => wrap(Kind.Bool, v),
-  [typeOf(null)]: () => wrap(Kind.Null, 0)
+  [typeOf({})]: (v) => wrap(Kind.Struct, struct.encode(v)),
+  [typeOf([])]: (v) => wrap(Kind.List, list.encode(v)),
+  [typeOf(0)]: (v) => wrap(Kind.Number, v),
+  [typeOf("")]: (v) => wrap(Kind.String, v),
+  [typeOf(true)]: (v) => wrap(Kind.Bool, v),
+  [typeOf(null)]: () => wrap(Kind.Null, null),
 };
 
 function typeOf(value: JsonValue): string {
@@ -85,12 +78,15 @@ function typeOf(value: JsonValue): string {
 }
 
 function wrap(kind: Kind, value): Value {
-  return {kind, [kind]: value};
+  return {
+    $case: kind,
+    [kind]: value,
+  };
 }
 
 function getKind(value: Value): string | null {
-  if (value.kind) {
-    return value.kind;
+  if (value.$case) {
+    return value.$case;
   }
 
   const validKinds = Object.values(Kind);
@@ -117,7 +113,7 @@ export const value = {
   encode(value: JsonValue): Value {
     const type = typeOf(value);
     const encoder = encoders[type];
-    if (typeof encoder !== 'function') {
+    if (typeof encoder !== "function") {
       throw new TypeError(`Unable to infer type for "${value}".`);
     }
     return encoder(value);
@@ -137,17 +133,17 @@ export const value = {
       throw new TypeError(`Unable to determine kind for "${value}".`);
     }
 
-    switch(kind) {
-      case 'listValue':
+    switch (kind) {
+      case "listValue":
         return list.decode(value.listValue);
-      case 'structValue':
+      case "structValue":
         return struct.decode(value.structValue);
-      case 'nullValue':
+      case "nullValue":
         return null;
       default:
         return value[kind] as JsonValue;
     }
-  }
+  },
 };
 
 /**
@@ -162,12 +158,14 @@ export const struct = {
    */
   encode(json: JsonObject): Struct {
     const fields = {};
-    Object.keys(json).forEach(key => {
+    Object.keys(json).forEach((key) => {
       // If value is undefined, do not encode it.
-      if (typeof json[key] === 'undefined') return;
-      fields[key] = value.encode(json[key]);
+      if (typeof json[key] === "undefined") return;
+      fields[key] = {
+        kind: value.encode(json[key]),
+      };
     });
-    return {fields};
+    return { fields };
   },
   /**
    * Decodes a protobuf {@link Struct} into a JSON object.
@@ -175,13 +173,13 @@ export const struct = {
    * @param {Struct} struct the protobuf struct.
    * @returns {Object.<string, *>}
    */
-  decode({fields}: Struct): JsonObject {
+  decode({ fields }: Struct): JsonObject {
     const json = {};
-    Object.keys(fields).forEach(key => {
-      json[key] = value.decode(fields[key]);
+    Object.keys(fields).forEach((key) => {
+      json[key] = value.decode(fields[key].kind);
     });
     return json;
-  }
+  },
 };
 
 /**
@@ -196,7 +194,7 @@ export const list = {
    */
   encode(values: JsonArray): ListValue {
     return {
-      values: values.map(value.encode)
+      values: values.map(value.encode),
     };
   },
   /**
@@ -205,7 +203,7 @@ export const list = {
    * @param {ListValue} list the protobuf list value.
    * @returns {Array.<*>}
    */
-  decode({values}: ListValue): JsonArray {
+  decode({ values }: ListValue): JsonArray {
     return values.map(value.decode);
-  }
+  },
 };
